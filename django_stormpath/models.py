@@ -377,7 +377,8 @@ class StormpathBaseUser(AbstractBaseUser, PermissionsMixin):
 
 
 class StormpathUser(StormpathBaseUser):
-    pass
+    class Meta(StormpathBaseUser.Meta):
+        swappable = 'AUTH_USER_MODEL'
 
 
 @receiver(pre_save, sender=Group)
