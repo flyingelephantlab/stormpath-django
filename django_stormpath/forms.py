@@ -2,12 +2,11 @@
 """
 
 from django import forms
-from django.contrib.auth import get_user_model
 from django.contrib.auth.forms import ReadOnlyPasswordHashField
 
 from stormpath.error import Error
 
-from .models import APPLICATION
+from .models import StormpathUser, APPLICATION
 
 
 class StormpathUserCreationForm(forms.ModelForm):
@@ -22,7 +21,7 @@ class StormpathUserCreationForm(forms.ModelForm):
         widget=forms.PasswordInput)
 
     class Meta:
-        model = get_user_model()
+        model = StormpathUser
         fields = ("username", "email",
             "given_name", "surname", "password1", "password2")
 
@@ -89,7 +88,7 @@ class StormpathUserChangeForm(forms.ModelForm):
     """Update Stormpath user form."""
 
     class Meta:
-        model = get_user_model()
+        model = StormpathUser
         exclude = ('password',)
 
     password = ReadOnlyPasswordHashField(help_text=("Passwords are not stored in the local database "
