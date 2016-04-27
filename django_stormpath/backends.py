@@ -59,7 +59,7 @@ class StormpathBackend(ModelBackend):
         UserModel = get_user_model()
         try:
             user = UserModel.objects.get(
-                Q(username=account.username) | Q(email=account.email))
+                **{UserModel.USERNAME_FIELD: getattr(account, UserModel.USERNAME_FIELD)})
             user._mirror_data_from_stormpath_account(account)
             self._mirror_groups_from_stormpath()
             users_sp_groups = [g.name for g in account.groups]

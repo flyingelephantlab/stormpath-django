@@ -2,6 +2,7 @@ from django.contrib.auth import login as django_login
 from django.shortcuts import resolve_url
 from django.core.urlresolvers import reverse
 from django.conf import settings
+from django.utils.module_loading import import_string
 
 
 from stormpath.error import Error as StormpathError
@@ -78,12 +79,12 @@ def get_access_token(provider, authorization_response, redirect_uri):
 def handle_social_callback(request, provider):
     provider_redirect_url = 'stormpath_' + provider.lower() + '_login_callback'
     abs_redirect_uri = request.build_absolute_uri(
-            reverse(provider_redirect_url, kwargs={'provider': provider}))
+        reverse(provider_redirect_url, kwargs={'provider': provider}))
 
     access_token = get_access_token(
-            provider,
-            request.build_absolute_uri(),
-            abs_redirect_uri)
+        provider,
+        request.build_absolute_uri(),
+        abs_redirect_uri)
 
     if not access_token:
         raise RuntimeError('Error communicating with Autentication Provider: %s' % provider)
@@ -107,6 +108,17 @@ def handle_social_callback(request, provider):
         create_provider_directory(provider, abs_redirect_uri)
 
         account = APPLICATION.get_provider_account(**params)
+
+    if hasattr(settings, 'STORMPATH_RETRIEVE_SOCIAL_CUSTOM_DATA'):
+        if settings.STORMPATH_RETRIEVE_SOCIAL_CUSTOM_DATA.get(provider):
+            update_custom_data_func = import_string(
+                settings.STORMPATH_RETRIEVE_SOCIAL_CUSTOM_DATA.get(provider)
+            )
+
+            new_custom_data = update_custom_data_func(account, access_token)
+            for key, value in new_custom_data.items():
+                # account doesn't have .update method
+                account.custom_data[key] = value
 
     user = _get_django_user(account)
     user.backend = SOCIAL_AUTH_BACKEND

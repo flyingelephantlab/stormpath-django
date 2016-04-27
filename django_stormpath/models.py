@@ -9,14 +9,17 @@ fields please extend the StormpathUser class from this module.
 
 from django.conf import settings
 from django.db import models, IntegrityError, transaction
-from django.contrib.auth.models import (BaseUserManager,
-        AbstractBaseUser, PermissionsMixin)
+from django.contrib.auth.models import (
+    BaseUserManager, AbstractBaseUser, PermissionsMixin)
 from django.forms import model_to_dict
 from django.core.exceptions import ObjectDoesNotExist
 from django.db.models.signals import pre_save, pre_delete
 from django.contrib.auth.models import Group
 from django.dispatch import receiver
 from django import VERSION as django_version
+from django.utils.dateparse import (
+    parse_date, parse_datetime, parse_time
+)
 
 from stormpath.client import Client
 from stormpath.error import Error as StormpathError
@@ -143,37 +146,39 @@ class StormpathUserManager(BaseUserManager):
     delete.queryset_only = True
 
 
-class StormpathBaseUser(AbstractBaseUser, PermissionsMixin):
-
-    class Meta:
-        abstract = True
-
+class StormpathMixin(models.Model):
     href = models.CharField(max_length=255, null=True, blank=True)
-    username = models.CharField(max_length=255, unique=True)
     given_name = models.CharField(max_length=255)
     surname = models.CharField(max_length=255)
-    middle_name = models.CharField(max_length=255, null=True, blank=True)
-    email = models.EmailField(verbose_name='email address',
+    email = models.EmailField(
+        verbose_name='email address',
         max_length=255,
         unique=True,
         db_index=True)
-
-    STORMPATH_BASE_FIELDS = ['href', 'username', 'given_name', 'surname', 'middle_name', 'email', 'password']
-    EXCLUDE_FIELDS = ['href', 'last_login', 'groups', 'id', 'stormpathpermissionsmixin_ptr', 'user_permissions']
-
-    PASSWORD_FIELD = 'password'
+    is_active = models.BooleanField(default=get_default_is_active)
+    is_verified = models.BooleanField(default=False)
+    is_staff = models.BooleanField(default=False)
 
     USERNAME_FIELD = 'email'
     REQUIRED_FIELDS = ['given_name', 'surname']
+    STORMPATH_BASE_FIELDS = [
+        'href', 'username', 'given_name', 'surname', 'middle_name', 'email',
+        'password']
+    EXCLUDE_FIELDS = [
+        'href', 'last_login', 'groups', 'id', 'stormpathpermissionsmixin_ptr',
+        'user_permissions']
+    DATE_FIELDS = []
+    TIME_FIELDS = []
+    DATETIME_FIELDS = []
+    FILE_FIELDS = []
+    PASSWORD_FIELD = 'password'
 
-    is_active = models.BooleanField(default=get_default_is_active)
-    is_verified = models.BooleanField(default=False)
-    is_admin = models.BooleanField(default=False)
-    is_staff = models.BooleanField(default=False)
+    DJANGO_PREFIX = 'spDjango_'
 
     objects = StormpathUserManager()
 
-    DJANGO_PREFIX = 'spDjango_'
+    class Meta:
+        abstract = True
 
     @property
     def first_name(self):
@@ -212,11 +217,19 @@ class StormpathBaseUser(AbstractBaseUser, PermissionsMixin):
         if 'is_active' in data:
             del data['is_active']
 
-        for key in data:
+        for key, value in data.iteritems():
             if key in self.STORMPATH_BASE_FIELDS:
-                account[key] = data[key]
+                account[key] = value
             else:
-                account.custom_data[self.DJANGO_PREFIX + key] = data[key]
+                # Matches datetime, date and time
+                if hasattr(value, 'isoformat'):
+                    value = value.isoformat()
+                if key in self.FILE_FIELDS:
+                    if value:
+                        value = value.url
+                    else:
+                        value = None
+                account.custom_data[self.DJANGO_PREFIX + key] = value
 
         return account
 
@@ -228,7 +241,16 @@ class StormpathBaseUser(AbstractBaseUser, PermissionsMixin):
             if field != 'password':
                 self.__setattr__(field, account[field])
         for key in account.custom_data.keys():
-            self.__setattr__(key.split(self.DJANGO_PREFIX)[0], account.custom_data[key])
+            field_name = [part for part in key.split(self.DJANGO_PREFIX) if part][0]
+            if field_name in self.DATE_FIELDS:
+                value = parse_date(account.custom_data[key])
+            elif field_name in self.DATETIME_FIELDS:
+                value = parse_datetime(account.custom_data[key])
+            elif field_name in self.TIME_FIELDS:
+                value = parse_time(account.custom_data[key])
+            else:
+                value = account.custom_data[key]
+            self.__setattr__(field_name, value)
 
         if account.status == account.STATUS_ENABLED:
             self.is_active = True
@@ -283,19 +305,10 @@ class StormpathBaseUser(AbstractBaseUser, PermissionsMixin):
         finally:
             self._remove_raw_password()
 
-    def get_full_name(self):
-        return "%s %s" % (self.given_name, self.surname)
-
-    def get_short_name(self):
-        return self.email
-
-    def __unicode__(self):
-        return self.get_full_name()
-
     def _update_for_db_and_stormpath(self, *args, **kwargs):
         try:
             with transaction.atomic():
-                super(StormpathBaseUser, self).save(*args, **kwargs)
+                super(StormpathMixin, self).save(*args, **kwargs)
                 self._update_stormpath_user(model_to_dict(self), self._get_raw_password())
         except StormpathError:
             raise
@@ -308,7 +321,7 @@ class StormpathBaseUser(AbstractBaseUser, PermissionsMixin):
     def _create_for_db_and_stormpath(self, *args, **kwargs):
         try:
             with transaction.atomic():
-                super(StormpathBaseUser, self).save(*args, **kwargs)
+                super(StormpathMixin, self).save(*args, **kwargs)
                 account = self._create_stormpath_user(model_to_dict(self), self._get_raw_password())
                 self.href = account.href
                 self.username = account.username
@@ -324,7 +337,7 @@ class StormpathBaseUser(AbstractBaseUser, PermissionsMixin):
             raise
 
     def _save_db_only(self, *args, **kwargs):
-        super(StormpathBaseUser, self).save(*args, **kwargs)
+        super(StormpathMixin, self).save(*args, **kwargs)
 
     def _remove_raw_password(self):
         """We need to send a raw password to Stormpath. After an Account is saved on Stormpath
@@ -368,12 +381,31 @@ class StormpathBaseUser(AbstractBaseUser, PermissionsMixin):
     def delete(self, *args, **kwargs):
         with transaction.atomic():
             href = self.href
-            super(StormpathBaseUser, self).delete(*args, **kwargs)
+            super(StormpathMixin, self).delete(*args, **kwargs)
             try:
                 account = APPLICATION.accounts.get(href)
                 account.delete()
             except StormpathError:
                 raise
+
+
+class StormpathBaseUser(StormpathMixin, AbstractBaseUser, PermissionsMixin):
+    username = models.CharField(max_length=255, unique=True)
+    middle_name = models.CharField(max_length=255, null=True, blank=True)
+
+    is_admin = models.BooleanField(default=False)
+
+    class Meta:
+        abstract = True
+
+    def get_full_name(self):
+        return "%s %s" % (self.given_name, self.surname)
+
+    def get_short_name(self):
+        return self.email
+
+    def __unicode__(self):
+        return self.get_full_name()
 
 
 class StormpathUser(StormpathBaseUser):

@@ -122,6 +122,19 @@ to your ``settings.py``:
     STORMPATH_SECRET = 'yourApiKeySecret'
     STORMPATH_APPLICATION = 'https://api.stormpath.com/v1/applications/YOUR_APP_UID_HERE'
 
+If you have custom fields in you user model, you can update it while sign up or sign in
+by defining STORMPATH_RETRIEVE_SOCIAL_CUSTOM_DATA variable like this:
+
+.. code-block:: python
+
+    STORMPATH_RETRIEVE_SOCIAL_CUSTOM_DATA = {
+        'facebook': "users.utils.retrieve_custom_data_facebook"
+    }
+
+Where `users.utils.retrieve_custom_data_facebook` is a function that return dict.
+Key is the field name with django prefix, and value is the field. This function 
+Will be resoponsible for connecting to the provider and process the data.
+
 Once this is done, you're ready to get started!  The next thing you need to do
 is to sync your database and apply any migrations:
 
