@@ -133,7 +133,7 @@ by defining STORMPATH_RETRIEVE_SOCIAL_CUSTOM_DATA variable like this:
 
 Where `users.utils.retrieve_custom_data_facebook` is a function that return dict.
 Key is the field name with django prefix, and value is the field. This function 
-Will be resoponsible for connecting to the provider and process the data.
+Will be responsible for connecting to the provider and process the data.
 
 Once this is done, you're ready to get started!  The next thing you need to do
 is to sync your database and apply any migrations:

@@ -242,14 +242,15 @@ class StormpathMixin(models.Model):
                 self.__setattr__(field, account[field])
         for key in account.custom_data.keys():
             field_name = [part for part in key.split(self.DJANGO_PREFIX) if part][0]
-            if field_name in self.DATE_FIELDS:
-                value = parse_date(account.custom_data[key])
-            elif field_name in self.DATETIME_FIELDS:
-                value = parse_datetime(account.custom_data[key])
-            elif field_name in self.TIME_FIELDS:
-                value = parse_time(account.custom_data[key])
-            else:
-                value = account.custom_data[key]
+            value = account.custom_data[key]
+            # check if value is not None for nullable fields
+            if value:
+                if field_name in self.DATE_FIELDS:
+                    value = parse_date(value)
+                elif field_name in self.DATETIME_FIELDS:
+                    value = parse_datetime(value)
+                elif field_name in self.TIME_FIELDS:
+                    value = parse_time(value)
             self.__setattr__(field_name, value)
 
         if account.status == account.STATUS_ENABLED:
